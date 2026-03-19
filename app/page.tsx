@@ -3,30 +3,33 @@ import Sidebar from '@/components/Sidebar';
 import KPICards from '@/components/KPICards';
 import UserTable from '@/components/UserTable';
 import { query } from '@/lib/db';
-
+ 
+export const dynamic = 'force-dynamic';
+ 
 async function getDashboardData() {
   try {
-    // Fetch users
+    // Fetch users - only active ones from 'users' table
     const usersResult = await query(`
-      SELECT 
-        user_account_id, 
-        username, 
-        email, 
-        role, 
-        contact_number, 
-        is_active, 
-        verified, 
-        created_date 
-      FROM user_accounts 
+      SELECT
+        user_id as user_account_id,
+        username,
+        email,
+        role,
+        phone_number as contact_number,
+        active as is_active,
+        verified,
+        created_date
+      FROM users
+      WHERE active = true
       ORDER BY created_date DESC
     `);
     
-    // Fetch KPIs
-    const totalUsersResult = await query('SELECT COUNT(*) FROM user_accounts');
-    const activeUsersResult = await query('SELECT COUNT(*) FROM user_accounts WHERE is_active = true');
-    const verifiedUsersResult = await query('SELECT COUNT(*) FROM user_accounts WHERE verified = true');
-    const newUsersTodayResult = await query("SELECT COUNT(*) FROM user_accounts WHERE created_date >= NOW() - INTERVAL '24 hours'");
-
+    // Fetch KPIs - aligned with active users
+    const totalUsersResult = await query('SELECT COUNT(*) FROM users WHERE active = true');
+    const activeUsersResult = await query('SELECT COUNT(*) FROM users WHERE active = true');
+    const verifiedUsersResult = await query('SELECT COUNT(*) FROM users WHERE verified = true AND active = true');
+    const newUsersTodayResult = await query("SELECT COUNT(*) FROM users WHERE created_date >= NOW() - INTERVAL '24 hours' AND active = true");
+ 
     return {
       users: usersResult.rows,
       stats: {
@@ -49,10 +52,10 @@ async function getDashboardData() {
     };
   }
 }
-
+ 
 export default async function DashboardPage() {
   const { users, stats } = await getDashboardData();
-
+ 
   return (
     <div className="flex h-screen bg-[#fafafa]">
       <Sidebar />
@@ -80,17 +83,19 @@ export default async function DashboardPage() {
               </button>
             </div>
           </div>
-
-          <KPICards 
+ 
+          <KPICards
             totalUsers={stats.totalUsers}
             activeUsers={stats.activeUsers}
             verifiedUsers={stats.verifiedUsers}
             newUsersToday={stats.newUsersToday}
           />
-
+ 
           <UserTable data={users} />
         </div>
       </main>
     </div>
   );
 }
+ 
+ 
