@@ -3,6 +3,12 @@ import Sidebar from '@/components/Sidebar';
 import KPICards from '@/components/KPICards';
 import UserTable from '@/components/UserTable';
 import { query } from '@/lib/db';
+import { revalidatePath } from 'next/cache';
+ 
+async function syncData() {
+  'use server';
+  revalidatePath('/');
+}
  
 export const dynamic = 'force-dynamic';
  
@@ -20,15 +26,15 @@ async function getDashboardData() {
         verified,
         created_date
       FROM users
-      WHERE active = true
+      WHERE active = true OR active IS NULL
       ORDER BY created_date DESC
     `);
-    
+   
     // Fetch KPIs - aligned with active users
-    const totalUsersResult = await query('SELECT COUNT(*) FROM users WHERE active = true');
-    const activeUsersResult = await query('SELECT COUNT(*) FROM users WHERE active = true');
-    const verifiedUsersResult = await query('SELECT COUNT(*) FROM users WHERE verified = true AND active = true');
-    const newUsersTodayResult = await query("SELECT COUNT(*) FROM users WHERE created_date >= NOW() - INTERVAL '24 hours' AND active = true");
+    const totalUsersResult = await query('SELECT COUNT(*) FROM users WHERE active = true OR active IS NULL');
+    const activeUsersResult = await query('SELECT COUNT(*) FROM users WHERE active = true OR active IS NULL');
+    const verifiedUsersResult = await query('SELECT COUNT(*) FROM users WHERE verified = true AND (active = true OR active IS NULL)');
+    const newUsersTodayResult = await query("SELECT COUNT(*) FROM users WHERE created_date >= NOW() - INTERVAL '24 hours' AND (active = true OR active IS NULL)");
  
     return {
       users: usersResult.rows,
@@ -78,9 +84,11 @@ export default async function DashboardPage() {
                   Live Engine
                 </span>
               </div>
-              <button className="rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-zinc-900 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.08)] border border-zinc-200 hover:bg-zinc-50 transition-all duration-200 active:scale-95">
-                Sync Data
-              </button>
+              <form action={syncData}>
+                <button type="submit" className="rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-zinc-900 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.08)] border border-zinc-200 hover:bg-zinc-50 transition-all duration-200 active:scale-95">
+                  Sync Data
+                </button>
+              </form>
             </div>
           </div>
  
@@ -97,5 +105,7 @@ export default async function DashboardPage() {
     </div>
   );
 }
+ 
+ 
  
  
