@@ -8,7 +8,8 @@ import {
   BarChart3, 
   UserPlus, 
   LogOut,
-  Search
+  Search,
+  Inbox
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -21,10 +22,7 @@ function cn(...inputs: ClassValue[]) {
 
 const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/' },
-  // { icon: Users, label: 'Users', href: '/users' },
-  // { icon: BarChart3, label: 'Analytics', href: '/analytics' },
-  // { icon: UserPlus, label: 'Add User', href: '/add-user' },
-  // { icon: Settings, label: 'Settings', href: '/settings' },
+  { icon: Inbox, label: 'Form Submissions', href: '/submissions' },
 ];
 
 export default function Sidebar() {
