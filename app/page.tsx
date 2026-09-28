@@ -4,6 +4,10 @@ import KPICards from '@/components/KPICards';
 import UserTable from '@/components/UserTable';
 import { query } from '@/lib/db';
 
+// Render on every request so newly registered users show up without a rebuild.
+// The pg queries aren't fetch() calls, so Next would otherwise prerender this page at build time.
+export const dynamic = 'force-dynamic';
+
 async function getDashboardData() {
   try {
     // Fetch users
