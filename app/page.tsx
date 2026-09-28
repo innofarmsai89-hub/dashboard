@@ -1,8 +1,12 @@
 import React from 'react';
-import Sidebar from '@/components/Sidebar';
-import KPICards from '@/components/KPICards';
-import UserTable from '@/components/UserTable';
+import { ShieldCheck, UserCheck, UserPlus, Users } from 'lucide-react';
+import AppShell from '@/components/AppShell';
+import UserTable, { type UserRow } from '@/components/UserTable';
+import PageHeader from '@/components/ui/PageHeader';
+import RefreshButton from '@/components/ui/RefreshButton';
+import StatCard from '@/components/ui/StatCard';
 import { query } from '@/lib/db';
+import { percent } from '@/lib/utils';
 
 // Render on every request so newly registered users show up without a rebuild.
 // The pg queries aren't fetch() calls, so Next would otherwise prerender this page at build time.
@@ -10,91 +14,90 @@ export const dynamic = 'force-dynamic';
 
 async function getDashboardData() {
   try {
-    // Fetch users
-    const usersResult = await query(`
-      SELECT 
-        user_account_id, 
-        username, 
-        email, 
-        role, 
-        contact_number, 
-        is_active, 
-        verified, 
-        created_date 
-      FROM user_accounts 
-      ORDER BY created_date DESC
-    `);
-    
-    // Fetch KPIs
-    const totalUsersResult = await query('SELECT COUNT(*) FROM user_accounts');
-    const activeUsersResult = await query('SELECT COUNT(*) FROM user_accounts WHERE is_active = true');
-    const verifiedUsersResult = await query('SELECT COUNT(*) FROM user_accounts WHERE verified = true');
-    const newUsersTodayResult = await query("SELECT COUNT(*) FROM user_accounts WHERE created_date >= NOW() - INTERVAL '24 hours'");
+    const [usersResult, statsResult] = await Promise.all([
+      query(`
+        SELECT
+          user_account_id,
+          username,
+          email,
+          role,
+          contact_number,
+          is_active,
+          verified,
+          created_date
+        FROM user_accounts
+        ORDER BY created_date DESC
+      `),
+      query(`
+        SELECT
+          COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE is_active = true) AS active,
+          COUNT(*) FILTER (WHERE verified = true) AS verified,
+          COUNT(*) FILTER (WHERE created_date >= NOW() - INTERVAL '24 hours') AS new_today
+        FROM user_accounts
+      `),
+    ]);
 
+    const s = statsResult.rows[0];
     return {
-      users: usersResult.rows,
+      users: usersResult.rows as UserRow[],
       stats: {
-        totalUsers: parseInt(totalUsersResult.rows[0].count),
-        activeUsers: parseInt(activeUsersResult.rows[0].count),
-        verifiedUsers: parseInt(verifiedUsersResult.rows[0].count),
-        newUsersToday: parseInt(newUsersTodayResult.rows[0].count),
-      }
+        totalUsers: parseInt(s.total),
+        activeUsers: parseInt(s.active),
+        verifiedUsers: parseInt(s.verified),
+        newUsersToday: parseInt(s.new_today),
+      },
+      error: null as string | null,
     };
   } catch (error) {
     console.error('Error fetching dashboard data:', error);
     return {
-      users: [],
-      stats: {
-        totalUsers: 0,
-        activeUsers: 0,
-        verifiedUsers: 0,
-        newUsersToday: 0,
-      }
+      users: [] as UserRow[],
+      stats: { totalUsers: 0, activeUsers: 0, verifiedUsers: 0, newUsersToday: 0 },
+      error: 'Could not load user data from the database.',
     };
   }
 }
 
 export default async function DashboardPage() {
-  const { users, stats } = await getDashboardData();
+  const { users, stats, error } = await getDashboardData();
 
   return (
-    <div className="flex h-screen bg-[#fafafa]">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto p-12">
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-12 flex items-end justify-between">
-            <div>
-              <h1 className="text-4xl font-extrabold tracking-tight text-zinc-900 border-l-4 border-zinc-900 pl-4">
-                Analytics
-                <span className="text-zinc-400 font-medium ml-2">Overview</span>
-              </h1>
-              <p className="mt-3 text-sm text-zinc-500 font-medium ml-5">
-                Monitor and manage your InnoFarms website metrics in real-time.
-              </p>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 rounded-xl bg-zinc-900/5 px-3 py-1.5 border border-zinc-900/10">
-                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-600">
-                  Live Engine
-                </span>
-              </div>
-              <button className="rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-zinc-900 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.08)] border border-zinc-200 hover:bg-zinc-50 transition-all duration-200 active:scale-95">
-                Sync Data
-              </button>
-            </div>
-          </div>
+    <AppShell>
+      <PageHeader
+        title="Dashboard"
+        description="Registered users and account health across InnoFarms."
+        actions={<RefreshButton />}
+      />
 
-          <KPICards 
-            totalUsers={stats.totalUsers}
-            activeUsers={stats.activeUsers}
-            verifiedUsers={stats.verifiedUsers}
-            newUsersToday={stats.newUsersToday}
-          />
-
-          <UserTable data={users} />
+      {error && (
+        <div role="alert" className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {error}
         </div>
-      </main>
-    </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <StatCard label="Total users" value={stats.totalUsers} icon={Users} tone="zinc" hint="All registered accounts" />
+        <StatCard
+          label="Active"
+          value={stats.activeUsers}
+          icon={UserCheck}
+          tone="brand"
+          progress={percent(stats.activeUsers, stats.totalUsers)}
+          hint={`${percent(stats.activeUsers, stats.totalUsers)}% of all users`}
+        />
+        <StatCard
+          label="Verified"
+          value={stats.verifiedUsers}
+          icon={ShieldCheck}
+          tone="blue"
+          progress={percent(stats.verifiedUsers, stats.totalUsers)}
+          hint={`${percent(stats.verifiedUsers, stats.totalUsers)}% of all users`}
+        />
+        <StatCard label="New (24h)" value={stats.newUsersToday} icon={UserPlus} tone="amber" hint="Registered in the last day" />
+      </div>
+
+      <UserTable data={users} />
+    </AppShell>
   );
 }

@@ -1,229 +1,217 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
-import { TabulatorFull as Tabulator } from 'tabulator-tables';
-import 'tabulator-tables/dist/css/tabulator_modern.min.css';
+import React, { useMemo, useState } from 'react';
+import { BadgeCheck, Download, Phone } from 'lucide-react';
+import { downloadCsv } from '@/lib/utils';
+import LocalDate from '@/components/ui/LocalDate';
+import { Avatar, Badge, Card, EmptyState, Pagination, SearchInput, Select } from '@/components/ui/primitives';
 
-import { 
-  CheckCircle2, 
-  XCircle, 
-  Download,
-  Calendar,
-  Mail,
-  User,
-  Phone,
-  ShieldCheck
-} from 'lucide-react';
-import { renderToString } from 'react-dom/server';
-
-interface UserTableProps {
-  data: any[];
+export interface UserRow {
+  user_account_id: string | number;
+  username: string | null;
+  email: string | null;
+  role: string | null;
+  contact_number: string | null;
+  is_active: boolean | null;
+  verified: boolean | null;
+  created_date: string | Date | null;
 }
 
-// Custom formatters using Lucide icons
-const statusFormatter = (cell: any) => {
-  const value = cell.getValue();
-  const icon = value 
-    ? renderToString(<CheckCircle2 className="h-4 w-4 text-emerald-500" />)
-    : renderToString(<XCircle className="h-4 w-4 text-zinc-300" />);
-  return `<div class="flex items-center justify-center">${icon}</div>`;
-};
+const PAGE_SIZE = 10;
 
-const verifiedFormatter = (cell: any) => {
-  const value = cell.getValue();
-  return value 
-    ? `<div class="flex items-center justify-center">${renderToString(<ShieldCheck className="h-4 w-4 text-blue-500" />)}</div>`
-    : `<div class="flex items-center justify-center">${renderToString(<CheckCircle2 className="h-4 w-4 text-zinc-200" />)}</div>`;
-};
+function StatusBadge({ active }: { active: boolean | null }) {
+  return active ? (
+    <Badge tone="green" dot>Active</Badge>
+  ) : (
+    <Badge tone="zinc" dot>Inactive</Badge>
+  );
+}
 
-const dateFormatter = (cell: any) => {
-  const val = cell.getValue();
-  if (!val) return '';
-  const date = new Date(val);
-  return `
-    <div class="flex items-center gap-2">
-      <span class="text-zinc-900 font-medium">${date.toLocaleDateString()}</span>
-    </div>
-  `;
-};
+function VerifiedBadge({ verified }: { verified: boolean | null }) {
+  return verified ? (
+    <span className="inline-flex items-center gap-1 text-sm text-blue-700">
+      <BadgeCheck className="h-4 w-4" /> Verified
+    </span>
+  ) : (
+    <span className="text-sm text-zinc-400">Unverified</span>
+  );
+}
 
-export default function UserTable({ data }: UserTableProps) {
-  const tableRef = useRef<HTMLDivElement>(null);
-  const tabulatorRef = useRef<Tabulator | null>(null);
+export default function UserTable({ data }: { data: UserRow[] }) {
+  const [search, setSearch] = useState('');
+  const [role, setRole] = useState('all');
+  const [status, setStatus] = useState('all');
+  const [page, setPage] = useState(1);
 
-  useEffect(() => {
-    if (tableRef.current && data.length > 0) {
-      tabulatorRef.current = new Tabulator(tableRef.current, {
-        data: data,
-        layout: "fitColumns",
-        responsiveLayout: "collapse",
-        pagination: true,
-        paginationMode: "local",
-        paginationSize: 10,
-        paginationSizeSelector: [10, 25, 50, 100],
-        movableColumns: true,
-        placeholder: "No Data Available",
-        columns: [
-          { 
-            title: "NAME", 
-            field: "username", 
-            width: 200, 
-            headerFilter: "input",
-            formatter: (cell: any) => `<span class="font-semibold text-zinc-900">${cell.getValue()}</span>`
-          },
-          { 
-            title: "EMAIL", 
-            field: "email", 
-            width: 250, 
-            headerFilter: "input",
-            formatter: (cell: any) => `<span class="text-zinc-500">${cell.getValue()}</span>`
-          },
-          { 
-            title: "ROLE", 
-            field: "role", 
-            width: 150, 
-            headerFilter: "list", 
-            headerFilterParams: { valuesLookup: "active", clearable: true },
-            formatter: (cell: any) => `
-              <span class="inline-flex items-center rounded-md bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">
-                ${cell.getValue()}
-              </span>
-            `
-          },
-          { title: "PHONE", field: "contact_number", width: 180, formatter: (cell: any) => `<span class="text-zinc-500 tabular-nums">${cell.getValue() || '-'}</span>` },
-          { 
-            title: "STATUS", 
-            field: "is_active", 
-            width: 100, 
-            formatter: statusFormatter, 
-            hozAlign: "center",
-            headerFilter: "tickCross",
-            headerFilterParams: { tristate: true }
-          },
-          { 
-            title: "VERIFIED", 
-            field: "verified", 
-            width: 100, 
-            formatter: verifiedFormatter, 
-            hozAlign: "center" 
-          },
-          { 
-            title: "JOINED", 
-            field: "created_date", 
-            width: 150, 
-            formatter: dateFormatter
-          },
-        ],
-      });
-    }
+  const roles = useMemo(
+    () => Array.from(new Set(data.map((u) => u.role).filter(Boolean) as string[])).sort(),
+    [data]
+  );
 
-    return () => {
-      if (tabulatorRef.current) {
-        tabulatorRef.current.destroy();
-        tabulatorRef.current = null;
-      }
-    };
-  }, [data]);
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return data.filter((u) => {
+      if (role !== 'all' && u.role !== role) return false;
+      if (status === 'active' && !u.is_active) return false;
+      if (status === 'inactive' && u.is_active) return false;
+      if (status === 'verified' && !u.verified) return false;
+      if (status === 'unverified' && u.verified) return false;
+      if (!term) return true;
+      return [u.username, u.email, u.contact_number, u.role].some((v) => v?.toLowerCase().includes(term));
+    });
+  }, [data, search, role, status]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const current = Math.min(page, pageCount);
+  const rows = filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
 
   return (
-    <div className="mt-8 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.05)]">
-      <div className="flex items-center justify-between border-b border-zinc-100 p-6">
-        <div>
-          <h2 className="text-xl font-bold text-zinc-900 tracking-tight">Website Users</h2>
-          <p className="mt-1 text-sm text-zinc-500 font-medium">Manage and monitor user access levels</p>
+    <Card className="mt-6 sm:mt-8">
+      <div className="flex flex-col gap-4 border-b border-zinc-200 p-4 sm:p-5 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-zinc-900">Registered users</h2>
+            <p className="mt-0.5 text-sm text-zinc-500">
+              {filtered.length === data.length
+                ? `${data.length.toLocaleString('en-US')} total`
+                : `${filtered.length.toLocaleString('en-US')} of ${data.length.toLocaleString('en-US')} shown`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => downloadCsv('users.csv', filtered as unknown as Record<string, unknown>[])}
+            disabled={filtered.length === 0}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 xl:hidden"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">Export</span>
+          </button>
         </div>
-        <button 
-          onClick={() => tabulatorRef.current?.download("csv", "users.csv")}
-          className="flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-zinc-800 transition-all duration-200"
-        >
-          <Download className="h-4 w-4" />
-          Export Dataset
-        </button>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+          <SearchInput
+            value={search}
+            onChange={(v) => { setSearch(v); setPage(1); }}
+            placeholder="Search name, email, phone"
+            className="col-span-2 sm:w-64"
+          />
+          <Select value={role} onChange={(v) => { setRole(v); setPage(1); }} label="Filter by role">
+            <option value="all">All roles</option>
+            {roles.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </Select>
+          <Select value={status} onChange={(v) => { setStatus(v); setPage(1); }} label="Filter by status">
+            <option value="all">Any status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="verified">Verified</option>
+            <option value="unverified">Unverified</option>
+          </Select>
+          <button
+            type="button"
+            onClick={() => downloadCsv('users.csv', filtered as unknown as Record<string, unknown>[])}
+            disabled={filtered.length === 0}
+            className="hidden h-9 items-center gap-2 rounded-lg bg-brand-700 px-3.5 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-40 xl:inline-flex"
+          >
+            <Download className="h-4 w-4" />
+            Export CSV
+          </button>
+        </div>
       </div>
-      <div className="p-4">
-        <div ref={tableRef} className="tabulator-custom" />
-      </div>
-      <style jsx global>{`
-        .tabulator {
-          border: none !important;
-          background-color: transparent !important;
-          font-family: inherit !important;
-        }
-        .tabulator-header {
-          background-color: transparent !important;
-          border-bottom: 1px solid #f4f4f5 !important;
-          color: #a1a1aa !important;
-          font-weight: 700 !important;
-          text-transform: uppercase !important;
-          letter-spacing: 0.05em !important;
-          font-size: 0.7rem !important;
-        }
-        .tabulator-col {
-          background-color: transparent !important;
-          border: none !important;
-        }
-        .tabulator-col-content {
-          padding: 12px 16px !important;
-        }
-        .tabulator-header-filter input {
-          margin-top: 8px !important;
-          padding: 6px 10px !important;
-          border-radius: 8px !important;
-          border: 1px solid #f4f4f5 !important;
-          background: #fafafa !important;
-          font-size: 0.75rem !important;
-          transition: all 0.2s !important;
-        }
-        .tabulator-header-filter input:focus {
-          border-color: #e4e4e7 !important;
-          background: #ffffff !important;
-          box-shadow: 0 0 0 2px rgba(0,0,0,0.02) !important;
-        }
-        .tabulator-row {
-          background-color: transparent !important;
-          border-bottom: 1px solid #fafafa !important;
-          transition: all 0.2s !important;
-          min-height: 64px !important;
-          display: flex !important;
-          align-items: center !important;
-        }
-        .tabulator-row.tabulator-selectable:hover {
-          background-color: #fafafa !important;
-        }
-        .tabulator-cell {
-          padding: 16px !important;
-          border: none !important;
-          display: flex !important;
-          align-items: center !important;
-        }
-        .tabulator-footer {
-          background-color: transparent !important;
-          border-top: 1px solid #f4f4f5 !important;
-          padding: 12px !important;
-          color: #71717a !important;
-        }
-        .tabulator-footer .tabulator-paginator {
-          color: inherit !important;
-          font-weight: 600 !important;
-        }
-        .tabulator-page {
-          border: 1px solid #f4f4f5 !important;
-          background: #ffffff !important;
-          border-radius: 8px !important;
-          margin: 0 2px !important;
-          padding: 6px 12px !important;
-          transition: all 0.2s !important;
-        }
-        .tabulator-page.active {
-          background: #18181b !important;
-          color: #ffffff !important;
-          border-color: #18181b !important;
-        }
-        .tabulator-placeholder-contents {
-          color: #a1a1aa !important;
-          font-weight: 500 !important;
-        }
-      `}</style>
-    </div>
+
+      {rows.length === 0 ? (
+        <EmptyState
+          title={data.length === 0 ? 'No users yet' : 'No users match your filters'}
+          description={data.length === 0 ? 'New registrations will appear here.' : 'Try a different search or filter.'}
+        />
+      ) : (
+        <>
+          {/* Desktop / tablet table */}
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-zinc-200 bg-zinc-50/60 text-xs font-medium text-zinc-500">
+                  <th scope="col" className="px-5 py-3 font-medium">User</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Role</th>
+                  <th scope="col" className="hidden px-4 py-3 font-medium lg:table-cell">Phone</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Status</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Verification</th>
+                  <th scope="col" className="px-5 py-3 text-right font-medium">Joined</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {rows.map((u) => (
+                  <tr key={u.user_account_id} className="transition-colors hover:bg-zinc-50/70">
+                    <td className="px-5 py-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Avatar name={u.username || u.email} />
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-zinc-900">{u.username || '—'}</p>
+                          <p className="truncate text-zinc-500">{u.email || '—'}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="capitalize text-zinc-700">{u.role || '—'}</span>
+                    </td>
+                    <td className="hidden whitespace-nowrap px-4 py-3 tabular-nums text-zinc-600 lg:table-cell">
+                      {u.contact_number || '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge active={u.is_active} />
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <VerifiedBadge verified={u.verified} />
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3 text-right text-zinc-600">
+                      <LocalDate value={u.created_date} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile cards */}
+          <ul className="divide-y divide-zinc-100 md:hidden">
+            {rows.map((u) => (
+              <li key={u.user_account_id} className="p-4">
+                <div className="flex items-start gap-3">
+                  <Avatar name={u.username || u.email} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="truncate font-medium text-zinc-900">{u.username || '—'}</p>
+                      <StatusBadge active={u.is_active} />
+                    </div>
+                    <p className="truncate text-sm text-zinc-500">{u.email || '—'}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500">
+                      {u.role && <span className="capitalize text-zinc-700">{u.role}</span>}
+                      {u.contact_number && (
+                        <span className="inline-flex items-center gap-1 tabular-nums">
+                          <Phone className="h-3.5 w-3.5" />
+                          {u.contact_number}
+                        </span>
+                      )}
+                      {u.verified && (
+                        <span className="inline-flex items-center gap-1 text-blue-700">
+                          <BadgeCheck className="h-3.5 w-3.5" /> Verified
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-zinc-400">
+                      Joined <LocalDate value={u.created_date} />
+                    </p>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      <Pagination page={current} pageCount={pageCount} total={filtered.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
+    </Card>
   );
 }
