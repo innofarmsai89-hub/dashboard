@@ -1,6 +1,10 @@
 const config = {
   plugins: {
-    "@tailwindcss/postcss": {},
+    // Resolve `@import "tailwindcss"` from this project, not process.cwd(),
+    // so the dev server works even when launched from a parent folder.
+    "@tailwindcss/postcss": {
+      base: import.meta.dirname,
+    },
   },
 };
 

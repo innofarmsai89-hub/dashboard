@@ -12,40 +12,55 @@ import { percent } from '@/lib/utils';
 // The pg queries aren't fetch() calls, so Next would otherwise prerender this page at build time.
 export const dynamic = 'force-dynamic';
 
+// One row per person, merged from user_accounts and users on normalized email.
+// Email is the identity key because secondary accounts reuse their owner's original_user_id.
+// Duplicate emails within either table collapse to the most recent row.
+// origin only exists on users; accounts without a users row inherit their owner's origin.
+const MERGED_USERS_SQL = `
+  WITH accounts AS (
+    SELECT DISTINCT ON (LOWER(TRIM(email))) LOWER(TRIM(email)) AS email_key, *
+    FROM public.user_accounts
+    WHERE email IS NOT NULL
+    ORDER BY LOWER(TRIM(email)), created_date DESC, user_account_id DESC
+  ),
+  legacy AS (
+    SELECT DISTINCT ON (LOWER(TRIM(email))) LOWER(TRIM(email)) AS email_key, *
+    FROM public.users
+    WHERE email IS NOT NULL
+    ORDER BY LOWER(TRIM(email)), created_date DESC
+  )
+  SELECT
+    COALESCE(a.email_key, l.email_key) AS id,
+    COALESCE(NULLIF(TRIM(a.username), ''), NULLIF(TRIM(l.username), '')) AS username,
+    COALESCE(a.email, l.email) AS email,
+    COALESCE(a.role, l.role) AS role,
+    COALESCE(
+      NULLIF(TRIM(a.contact_number), ''),
+      NULLIF(TRIM(CONCAT_WS(' ', l.phone_code, l.phone_number)), '')
+    ) AS contact_number,
+    COALESCE(l.origin, owner.origin) AS origin,
+    COALESCE(a.is_active, l.active) AS is_active,
+    COALESCE(a.verified, l.verified) AS verified,
+    LEAST(a.created_date, l.created_date) AS created_date
+  FROM accounts a
+  FULL OUTER JOIN legacy l ON l.email_key = a.email_key
+  LEFT JOIN public.users owner ON owner.user_id = a.original_user_id
+  ORDER BY created_date DESC NULLS LAST
+`;
+
 async function getDashboardData() {
   try {
-    const [usersResult, statsResult] = await Promise.all([
-      query(`
-        SELECT
-          user_account_id,
-          username,
-          email,
-          role,
-          contact_number,
-          is_active,
-          verified,
-          created_date
-        FROM user_accounts
-        ORDER BY created_date DESC
-      `),
-      query(`
-        SELECT
-          COUNT(*) AS total,
-          COUNT(*) FILTER (WHERE is_active = true) AS active,
-          COUNT(*) FILTER (WHERE verified = true) AS verified,
-          COUNT(*) FILTER (WHERE created_date >= NOW() - INTERVAL '24 hours') AS new_today
-        FROM user_accounts
-      `),
-    ]);
+    const { rows } = await query(MERGED_USERS_SQL);
+    const users = rows as UserRow[];
+    const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
 
-    const s = statsResult.rows[0];
     return {
-      users: usersResult.rows as UserRow[],
+      users,
       stats: {
-        totalUsers: parseInt(s.total),
-        activeUsers: parseInt(s.active),
-        verifiedUsers: parseInt(s.verified),
-        newUsersToday: parseInt(s.new_today),
+        totalUsers: users.length,
+        activeUsers: users.filter((u) => u.is_active).length,
+        verifiedUsers: users.filter((u) => u.verified).length,
+        newUsersToday: users.filter((u) => u.created_date && new Date(u.created_date).getTime() >= dayAgo).length,
       },
       error: null as string | null,
     };
@@ -67,7 +82,7 @@ export default async function DashboardPage() {
       <PageHeader
         title="Dashboard"
         description="Registered users and account health across InnoFarms."
-        actions={<RefreshButton />}
+        actions={<RefreshButton intervalMs={10_000} />}
       />
 
       {error && (

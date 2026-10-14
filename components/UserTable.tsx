@@ -7,11 +7,12 @@ import LocalDate from '@/components/ui/LocalDate';
 import { Avatar, Badge, Card, EmptyState, Pagination, SearchInput, Select } from '@/components/ui/primitives';
 
 export interface UserRow {
-  user_account_id: string | number;
+  id: string;
   username: string | null;
   email: string | null;
   role: string | null;
   contact_number: string | null;
+  origin: string | null;
   is_active: boolean | null;
   verified: boolean | null;
   created_date: string | Date | null;
@@ -25,6 +26,12 @@ function StatusBadge({ active }: { active: boolean | null }) {
   ) : (
     <Badge tone="zinc" dot>Inactive</Badge>
   );
+}
+
+function OriginBadge({ origin }: { origin: string | null }) {
+  if (!origin) return <span className="text-sm text-zinc-400">—</span>;
+  const tone = origin.startsWith('aura') ? 'blue' : origin === 'dashboard' ? 'green' : 'zinc';
+  return <Badge tone={tone}>{origin}</Badge>;
 }
 
 function VerifiedBadge({ verified }: { verified: boolean | null }) {
@@ -41,10 +48,15 @@ export default function UserTable({ data }: { data: UserRow[] }) {
   const [search, setSearch] = useState('');
   const [role, setRole] = useState('all');
   const [status, setStatus] = useState('all');
+  const [origin, setOrigin] = useState('all');
   const [page, setPage] = useState(1);
 
   const roles = useMemo(
     () => Array.from(new Set(data.map((u) => u.role).filter(Boolean) as string[])).sort(),
+    [data]
+  );
+  const origins = useMemo(
+    () => Array.from(new Set(data.map((u) => u.origin).filter(Boolean) as string[])).sort(),
     [data]
   );
 
@@ -52,14 +64,16 @@ export default function UserTable({ data }: { data: UserRow[] }) {
     const term = search.trim().toLowerCase();
     return data.filter((u) => {
       if (role !== 'all' && u.role !== role) return false;
+      if (origin === 'none' && u.origin) return false;
+      if (origin !== 'all' && origin !== 'none' && u.origin !== origin) return false;
       if (status === 'active' && !u.is_active) return false;
       if (status === 'inactive' && u.is_active) return false;
       if (status === 'verified' && !u.verified) return false;
       if (status === 'unverified' && u.verified) return false;
       if (!term) return true;
-      return [u.username, u.email, u.contact_number, u.role].some((v) => v?.toLowerCase().includes(term));
+      return [u.username, u.email, u.contact_number, u.role, u.origin].some((v) => v?.toLowerCase().includes(term));
     });
-  }, [data, search, role, status]);
+  }, [data, search, role, status, origin]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const current = Math.min(page, pageCount);
@@ -91,7 +105,7 @@ export default function UserTable({ data }: { data: UserRow[] }) {
           <SearchInput
             value={search}
             onChange={(v) => { setSearch(v); setPage(1); }}
-            placeholder="Search name, email, phone"
+            placeholder="Search name, email, phone, origin"
             className="col-span-2 sm:w-64"
           />
           <Select value={role} onChange={(v) => { setRole(v); setPage(1); }} label="Filter by role">
@@ -101,6 +115,15 @@ export default function UserTable({ data }: { data: UserRow[] }) {
                 {r}
               </option>
             ))}
+          </Select>
+          <Select value={origin} onChange={(v) => { setOrigin(v); setPage(1); }} label="Filter by origin">
+            <option value="all">All origins</option>
+            {origins.map((o) => (
+              <option key={o} value={o}>
+                {o}
+              </option>
+            ))}
+            <option value="none">No origin</option>
           </Select>
           <Select value={status} onChange={(v) => { setStatus(v); setPage(1); }} label="Filter by status">
             <option value="all">Any status</option>
@@ -135,6 +158,7 @@ export default function UserTable({ data }: { data: UserRow[] }) {
                 <tr className="border-b border-zinc-200 bg-zinc-50/60 text-xs font-medium text-zinc-500">
                   <th scope="col" className="px-5 py-3 font-medium">User</th>
                   <th scope="col" className="px-4 py-3 font-medium">Role</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Origin</th>
                   <th scope="col" className="hidden px-4 py-3 font-medium lg:table-cell">Phone</th>
                   <th scope="col" className="px-4 py-3 font-medium">Status</th>
                   <th scope="col" className="px-4 py-3 font-medium">Verification</th>
@@ -143,7 +167,7 @@ export default function UserTable({ data }: { data: UserRow[] }) {
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {rows.map((u) => (
-                  <tr key={u.user_account_id} className="transition-colors hover:bg-zinc-50/70">
+                  <tr key={u.id} className="transition-colors hover:bg-zinc-50/70">
                     <td className="px-5 py-3">
                       <div className="flex min-w-0 items-center gap-3">
                         <Avatar name={u.username || u.email} />
@@ -155,6 +179,9 @@ export default function UserTable({ data }: { data: UserRow[] }) {
                     </td>
                     <td className="px-4 py-3">
                       <span className="capitalize text-zinc-700">{u.role || '—'}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <OriginBadge origin={u.origin} />
                     </td>
                     <td className="hidden whitespace-nowrap px-4 py-3 tabular-nums text-zinc-600 lg:table-cell">
                       {u.contact_number || '—'}
@@ -177,7 +204,7 @@ export default function UserTable({ data }: { data: UserRow[] }) {
           {/* Mobile cards */}
           <ul className="divide-y divide-zinc-100 md:hidden">
             {rows.map((u) => (
-              <li key={u.user_account_id} className="p-4">
+              <li key={u.id} className="p-4">
                 <div className="flex items-start gap-3">
                   <Avatar name={u.username || u.email} />
                   <div className="min-w-0 flex-1">
@@ -188,6 +215,7 @@ export default function UserTable({ data }: { data: UserRow[] }) {
                     <p className="truncate text-sm text-zinc-500">{u.email || '—'}</p>
                     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500">
                       {u.role && <span className="capitalize text-zinc-700">{u.role}</span>}
+                      {u.origin && <OriginBadge origin={u.origin} />}
                       {u.contact_number && (
                         <span className="inline-flex items-center gap-1 tabular-nums">
                           <Phone className="h-3.5 w-3.5" />
